@@ -1,20 +1,21 @@
-
 Option Explicit
 
 ' Comment the first declaration and uncomment the second for synchronous request class to be used
 'Dim bbControlStatic As New DataControl_Static
+
 Dim bbControlSync As New DataControl_Sync
 Dim bbControlSync_Y1 As New DataControl_Sync
 Dim g_stopDate As Date
 'Dim bbControlHistoric As New DataControl_Hist
 '
 
-Public Function GetFALScores(rTickers As Range, lYear As Long, Optional bHorizontal As Boolean, Optional bExcludeTits As Boolean) As Variant
+Public Function GetFALScores(rTickers As Range, lYear As Long, sPeriod As String, sConsolidated As String, Optional bHorizontal As Boolean, Optional bExcludeTits As Boolean) As Variant
 '   Range formula on the s/sheet
 Dim ii As Long, jj As Long, lNumSecs As Long, lNumLevelCols As Long, lNumMetricsCols As Long, lResRow As Long
 Dim sSecurity() As String, sOut() As String, bOK As Boolean, lRowOff As Integer
 Dim vSecurity As Variant, sYear As Variant, vLevels As Variant, vMetrics As Variant, vTitles As Variant, vMetricsTitles As Variant, vOut() As Variant
 Dim dicTickers As Dictionary
+
 
 On Error GoTo shagged
 
@@ -40,8 +41,8 @@ On Error GoTo shagged
     Next ii
     vSecurity = sSecurity
     sYear = CStr(lYear)
-
-    bOK = ReturnFALResults(vSecurity, sYear, vLevels, vMetrics, vTitles, vMetricsTitles)
+   
+    bOK = ReturnFALResults(vSecurity, sYear, sPeriod, sConsolidated, vLevels, vMetrics, vTitles, vMetricsTitles)
 
     Set dicTickers = New Dictionary
     For ii = 0 To UBound(vSecurity) '   Create dictionary of the TICKERS
@@ -130,11 +131,13 @@ shagged:
 End Function
 
 
-Function ReturnFALResults(ByVal vSecurity As Variant, ByVal sYear As String, ByRef vLevels As Variant, ByRef vMetrics As Variant, ByRef vTitles As Variant, ByRef vMetricsTitles As Variant) As Boolean
+Function ReturnFALResults(ByVal vSecurity As Variant, ByVal sYear As String, ByVal sPeriod As String, ByVal sConsolidated As String, ByRef vLevels As Variant, ByRef vMetrics As Variant, ByRef vTitles As Variant, ByRef vMetricsTitles As Variant) As Boolean
 
 Dim vSortedRes As Variant, vSortedRes_Y1 As Variant, vStaticFields As Variant, vRes As Variant, vRes_Y1 As Variant, vInputs As Variant
 Dim sOverrideFields(0 To 2) As String, sOverridefields_Y1(0 To 2) As String, sOverrideValues(0 To 2) As String, sOverrideValues_Y1(0 To 2) As String, sSecurity() As String
 Dim bOK As Boolean, ii As Long, dicLabels As Dictionary
+Dim i As Long, j As Long
+
 
     Set dicLabels = New Dictionary
     vTitles = Array("Name", "Level of accounts receivable", "Level of inventory", "Level of other current assets", "Level of accounts payable", "Level of other current liability", "Working capital score", "", "Level of non-operating income as a % recurring income", "Level cashflow from operations as a % net income", "Level freecashflow as a % net income", "Quality of earnings score", "", "Level of debt to ebitda score", "Level of ebitda interest expense score", "Level of debt to OPCF", "Balance sheet score", "", "Overall Score", "")
@@ -143,15 +146,15 @@ Dim bOK As Boolean, ii As Long, dicLabels As Dictionary
     bOK = GetFields(vStaticFields)
 '    numStaticFields = UBound(vStaticFields) + 1
     
-    sOverrideFields(0) = "EQY_FUND_CRNCY"
-    sOverrideValues(0) = "USD"
-    sOverrideValues_Y1(0) = "USD"
-    sOverrideFields(1) = "EQY_FUND_YEAR"
-    sOverrideValues(1) = sYear
-    sOverrideValues_Y1(1) = CStr(CInt(sYear) - 1)
+    sOverrideFields(0) = "EQY_FUND_YEAR"
+    sOverrideValues(0) = sYear
+    sOverrideValues_Y1(0) = CStr(CInt(sYear) - 1)
+    sOverrideFields(1) = "FUND_PER"
+    sOverrideValues(1) = sPeriod
+    sOverrideValues_Y1(1) = sPeriod
     sOverrideFields(2) = "EQY_CONSOLIDATED"
-    sOverrideValues(2) = "Y"
-    sOverrideValues_Y1(2) = "Y"
+    sOverrideValues(2) = sConsolidated
+    sOverrideValues_Y1(2) = sConsolidated
 
     ReDim sSecurity(LBound(vSecurity) To UBound(vSecurity))
     For ii = LBound(vSecurity) To UBound(vSecurity)
@@ -160,6 +163,8 @@ Dim bOK As Boolean, ii As Long, dicLabels As Dictionary
 
 '    sOverrideValues_Y1 = sOverrideValues
 '    sOverrideValues_Y1(1) = CStr(CInt(sOverrideValues(1)) - 1)
+
+
 
     bbControlSync.MakeRequest sSecurity, vStaticFields, sOverrideFields, sOverrideValues
     bbControlSync_Y1.MakeRequest sSecurity, vStaticFields, sOverrideFields, sOverrideValues_Y1
@@ -175,6 +180,7 @@ Dim bOK As Boolean, ii As Long, dicLabels As Dictionary
     vSortedRes = SortResultsMatrix(dicLabels, vRes) '   Sort into consistent columns
     vSortedRes_Y1 = SortResultsMatrix(dicLabels, vRes_Y1) '   Sort into consistent columns
     
+  
 '   Get the INPUTS to the scores (e.g. rec. days)
     vInputs = CalcInputs(dicLabels, vSortedRes, vSortedRes_Y1)
 
@@ -184,13 +190,6 @@ Dim bOK As Boolean, ii As Long, dicLabels As Dictionary
 '   Popupate the financial ratiosand fianncial metrics
     bOK = FinRatios(vInputs, vMetrics)
 
-Exit Function
-
-shagged:
-
-    Application.StatusBar = False
-    MsgBox "Error in ReturnFALResults"
-    'Resume
 End Function
 
 
@@ -242,16 +241,16 @@ On Error GoTo shagged
     On Error Resume Next    '   If there's a divide by zero error, carry on with the next one
     For ii = 0 To lRow
         vOut(ii, 0) = vInputs(ii, dicLabels("NAME"))
-        vOut(ii, 20) = CDbl(vInputs(ii, dicLabels("SALES_REV_TURN")))
+        vOut(ii, 20) = CDbl(vInputs(ii, dicLabels("TRAIL_12M_NET_SALES")))
         vOut(ii, 26) = (vInputs(ii, dicLabels("TICKER_AND_EXCH_CODE")))
         vOut(ii, 27) = (vInputs(ii, dicLabels("INDUSTRY_GROUP")))
-        If vInputs(ii, dicLabels("SALES_REV_TURN")) > 0 Then
-            vOut(ii, 1) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_ACCT_NOTE_RCV"))), CDbl(vInputs_Y1(ii, dicLabels("BS_ACCT_NOTE_RCV")))) / CDbl(vInputs(ii, dicLabels("SALES_REV_TURN")))    '   Receivables days
-            vOut(ii, 2) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_INVENTORIES"))), CDbl(vInputs_Y1(ii, dicLabels("BS_INVENTORIES")))) / CDbl(vInputs(ii, dicLabels("SALES_REV_TURN")))    '   Inventory days
-            vOut(ii, 3) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_OTHER_CUR_ASSET"))), CDbl(vInputs_Y1(ii, dicLabels("BS_OTHER_CUR_ASSET")))) / CDbl(vInputs(ii, dicLabels("SALES_REV_TURN")))    '   Other current asset days
+        If vInputs(ii, dicLabels("TRAIL_12M_NET_SALES")) > 0 Then
+            vOut(ii, 1) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_ACCT_NOTE_RCV"))), CDbl(vInputs_Y1(ii, dicLabels("BS_ACCT_NOTE_RCV")))) / CDbl(vInputs(ii, dicLabels("TRAIL_12M_NET_SALES")))    '   Receivables days
+            vOut(ii, 2) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_INVENTORIES"))), CDbl(vInputs_Y1(ii, dicLabels("BS_INVENTORIES")))) / CDbl(vInputs(ii, dicLabels("TRAIL_12M_NET_SALES")))    '   Inventory days
+            vOut(ii, 3) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_OTHER_CUR_ASSET"))), CDbl(vInputs_Y1(ii, dicLabels("BS_OTHER_CUR_ASSET")))) / CDbl(vInputs(ii, dicLabels("TRAIL_12M_NET_SALES")))    '   Other current asset days
             vOut(ii, 4) = vOut(ii, 1) + vOut(ii, 2) + vOut(ii, 3)   '   Current asset days
-            vOut(ii, 5) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_ACCT_PAYABLE"))), CDbl(vInputs_Y1(ii, dicLabels("BS_ACCT_PAYABLE")))) / CDbl(vInputs(ii, dicLabels("SALES_REV_TURN")))    '   Payable days
-            vOut(ii, 6) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_OTHER_ST_LIAB"))), CDbl(vInputs_Y1(ii, dicLabels("BS_OTHER_ST_LIAB")))) / CDbl(vInputs(ii, dicLabels("SALES_REV_TURN")))    '   Other current liability days
+            vOut(ii, 5) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_ACCT_PAYABLE"))), CDbl(vInputs_Y1(ii, dicLabels("BS_ACCT_PAYABLE")))) / CDbl(vInputs(ii, dicLabels("TRAIL_12M_NET_SALES")))    '   Payable days
+            vOut(ii, 6) = 365 * AvgIfDefined(CDbl(vInputs(ii, dicLabels("BS_OTHER_ST_LIAB"))), CDbl(vInputs_Y1(ii, dicLabels("BS_OTHER_ST_LIAB")))) / CDbl(vInputs(ii, dicLabels("TRAIL_12M_NET_SALES")))    '   Other current liability days
 
             
             vOut(ii, 7) = vOut(ii, 5) + vOut(ii, 6) '   Current liabilities days
@@ -551,7 +550,7 @@ End Function
 
 Function GetFields(ByRef v As Variant) As Boolean
 
-v = Array("TICKER_AND_EXCH_CODE", "NAME", "PX_LAST", "MARKET_SECTOR_DES", "HISTORICAL_MARKET_CAP", "SALES_REV_TURN", "IS_COGS_TO_FE_AND_PP_AND_G", _
+v = Array("TICKER_AND_EXCH_CODE", "NAME", "PX_LAST", "MARKET_SECTOR_DES", "HISTORICAL_MARKET_CAP", "TRAIL_12M_NET_SALES", "IS_COGS_TO_FE_AND_PP_AND_G", _
 "BS_ACCT_NOTE_RCV", "BS_OTHER_CUR_ASSET", "BS_INVENTORIES", "BS_ACCT_PAYABLE", "BS_OTHER_ST_LIAB", "ACCT_RCV_DAYS", _
 "IS_OPER_INC", "IS_INT_EXPENSE", "EFF_INT_RATE", "IS_CAP_INT_EXP", "IS_EQY_EARN_FROM_INVEST_ASSOC", "IS_NET_NON_OPER_LOSS", _
 "IS_FOREIGN_EXCH_LOSS", "IS_XO_LOSS_BEF_TAX_EFF", "CF_CASH_FROM_OPER", "NET_INCOME", "CF_CASH_FROM_INV_ACT", _
